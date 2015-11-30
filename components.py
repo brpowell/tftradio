@@ -6,8 +6,9 @@ from time import sleep
 
 session = { "IMAGES": None, "CONTROL": None, "PIANOBAR": None, "ACTIVE": True,
             "VOLUME_CONTROL": None, "VOLUME": 100, "MUSIC_PLAYING": False,
-            "CURRENT_TRACK": None, "DEBUG": False }
+            "CURRENT_TRACK": None, "DEBUG": False, 'PANEL': 0, 'SCREEN': None }
 screen = pygame.display.set_mode((320, 240))
+pitft = 0
 
 # EVENTS - thread control
 NEW_TRACK_EV = threading.Event()
@@ -27,20 +28,36 @@ SS_WIDTH = 283
 SS_HEIGHT = 20
 SS_POS = (19, 7)
 
+def enum(**enums):
+    return type('Enum', (), enums)
+
+PANELS = enum(MEDIA=0, VOLUME=1, PAGES=2)
+SCREENS = enum(NOWPLAYING=0, HOME=1, STATIONS=2)
 
 def debug(message):
     global session
     if session['DEBUG']:
         print message
 
-def init_session(pianobar='/home/bryan/.config/pianobar'):
-    global session
+def init_session(pianobar='/home/bryan/.config/pianobar', tft=True, debug=False):
+    global session, screen, pitft
     local_path = os.path.dirname(os.path.realpath(__file__))
 
+    if tft:
+        from pitftscreen import pitft
+        os.putenv('SDL_FBDEV', '/dev/fb1')
+        pygame.init()
+        pygame.mouse.set_visible(False)
+        pitft = PiTFT_Screen()
+    else:
+        pygame.init()
+
+    screen = pygame.display.set_mode((320, 240))
     session['PIANOBAR'] = pianobar
     session['IMAGES'] = os.path.join(local_path, 'images')
     session['CONTROL'] = os.path.join(pianobar, 'control-pianobar.sh')
     session['DB'] = os.path.join(local_path, 'radio.db')
+    session['DEBUG'] = debug
 
     create_new_db = not os.path.exists(session['DB'])
     conn = sql.connect(session['DB'])
@@ -58,10 +75,53 @@ def init_session(pianobar='/home/bryan/.config/pianobar'):
         for line in stations:
             station_info = line.split(')')
             station_id = int(station_info[0])
-            station_name = station_info[1].lstrip().rstrip('\n')
+            station_name = station_info[1].lstrip().rstrip(' Radio\n')
             conn.execute("INSERT INTO stations(id, name) VALUES(?, ?)",
             (station_id, station_name))
         conn.commit()
+
+def flash_status(command):
+    global session
+    status = ''
+    if command == 'p':
+        if music_playing:
+            status = 'play'
+        else:
+            status = 'pause'
+    elif command == 'next':
+        status = 'Skipping track...'
+    elif command == 'love':
+        status = 'Track liked'
+    elif command == 'hate':
+        status = 'Track disliked'
+
+    header_surface = pygame.Surface((283, 20), pygame.SRCALPHA)
+    header_surface.fill(HEADER_COLOR)
+    draw_text(status, header_surface, SS_POS, SS_WIDTH/2, 10)
+    sleep(5)
+    station = session['CURRENT_TRACK']['station']
+    draw_text(station, header_surface, SS_POS, SS_WIDTH/2, 10)
+
+def control_pianobar(command):
+    global session
+    volume = session['VOLUME']
+
+    if command.split(' ')[0] == 'audio':
+        arg = command.split(' ')[1]
+        if arg == 'up' and audio_level < 100:
+            volume += 2
+        elif arg == 'down' and volume > 50:
+            volume -= 2
+        elif arg == 'set':
+            volume = int(command.split(' ')[2])
+        os.system('amixer sset PCM,0 ' + str(volume) + '%')
+        session['VOLUME'] = volume
+    else:
+        if(command == 'p'):
+            session['MUSIC_PLAYING'] = not session['MUSIC_PLAYING']
+        status = Thread(target=flash_status, args=(command,))
+        status.start()
+        os.system('su pi -c \"' + session['CONTROL'] + command + '\"')
 
 def draw_text(text, surface, surface_position, x, y):
     np_font = pygame.font.SysFont("Helvetica", 12)
@@ -86,11 +146,11 @@ def render_nowplaying_thread():
     global NEW_TRACK_EV, RENDER_EV
 
     conn = sql.connect(session['DB'])
-    while session['ACTIVE']:
+    while session['ACTIVE'] and session['SCREEN'] == SCREENS.NOWPLAYING:
         debug('render_thread: Waiting')
         RENDER_EV.wait()
         RENDER_EV.clear()
-        if not session['ACTIVE']:
+        if not session['ACTIVE'] or session['SCREEN'] != SCREENS.NOWPLAYING:
             debug('render_thread: Exited')
             return
         debug('render_thread: Waited')
@@ -155,7 +215,7 @@ def render_nowplaying():
     screen.blit(home_btn, (262, 45))
     pygame.display.flip()
 
-def toggle_control_panel(hide=False):
+def render_control_panel(panel, hide=False):
     global session
 
     control_panel_surface = pygame.Surface((320, 16), pygame.SRCALPHA)
@@ -163,33 +223,69 @@ def toggle_control_panel(hide=False):
     if hide:
         pygame.display.flip()
         return
-    if session['VOLUME_CONTROL'] == None:
-        session['VOLUME_CONTROL'] = False
 
-    btn_imgs = []
-    if session['VOLUME_CONTROL']:
-        btn_imgs.append(os.path.join(session['IMAGES'], 'volume-low-2x.png'))
-        btn_imgs.append(os.path.join(session['IMAGES'], 'volume-high-2x.png'))
-        btn_imgs.append(os.path.join(session['IMAGES'], 'volume-off-2x.png'))
-    else:
-        img = ''
+    btns = []
+    if panel == PANELS.MEDIA:
+        play_pause = ''
         if session['MUSIC_PLAYING']:
-            img = 'pause-2x.png'
+            play_pause = 'pause-2x.png'
         else:
-            img = 'play-2x.png'
-        btn_imgs.append(os.path.join(session['IMAGES'], img))
-        btn_imgs.append(os.path.join(session['IMAGES'], 'skip-2x.png'))
-        btn_imgs.append(os.path.join(session['IMAGES'], 'like-2x.png'))
-        btn_imgs.append(os.path.join(session['IMAGES'], 'dislike-2x.png'))
+            play_pause = 'play-2x.png'
+        btns.append(play_pause)
+        btns.append('skip-2x.png')
+        btns.append('like-2x.png')
+        btns.append('dislike-2x.png')
+    elif panel == PANELS.VOLUME:
+        btns.append('volume-low-2x.png')
+        btns.append('volume-high-2x.png')
+        btns.append('volume-off-2x.png')
+    elif panel == PANELS.PAGES:
+        btns.append('arrow-thick-left-2x.png')
+        btns.append('arrow-thick-right-2x.png')
 
     img_x = 25
-    for img in btn_imgs:
-        img = pygame.image.load(img)
-        control_panel_surface.blit(img, (img_x, 0))
+    for img_file in btns:
+        path = os.path.join(session['IMAGES'], img_file)
+        control_panel_surface.blit(pygame.image.load(path), (img_x, 0))
         img_x += 32
     screen.blit(control_panel_surface, (0, 223))
     pygame.display.flip()
-    session['VOLUME_CONTROL'] = not session['VOLUME_CONTROL']
+    session['PANEL'] = panel
+
+def read_control(tft=False):
+    global session
+
+    # Screen touches
+    for event in pygame.event.get():
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            pos = pygame.mouse.get_pos()
+            if session['SCREEN'] == SCREENS.NOWPLAYING:
+                if 262 <= pos[0] <= 310 and 100 <= pos[1] <= 148:
+                    panel = 0
+                    if session['PANEL'] == PANELS.VOLUME:
+                        panel = PANELS.MEDIA
+                    elif session['PANEL'] == PANELS.MEDIA:
+                        panel = PANELS.VOLUME
+                    render_control_panel(panel)
+
+    # Button presses
+    if tft:
+        if session['PANEL'] == PANELS.VOLUME:
+            if pitft.Button1:
+                control_pianobar('audio down')
+            if pitft.Button2:
+                control_pianobar('audio up')
+            if pitft.Button3:
+                control_pianobar('audio mute')
+        elif session['PANEL'] == PANELS.MEDIA:
+            if pitft.Button1:
+                control_pianobar('p')
+            if pitft.Button2:
+                control_pianobar('next')
+            if pitft.Button3:
+                control_pianobar('love')
+            if pitft.Button4:
+                control_pianobar('hate')
 
 def new_track_thread():
     global session
@@ -237,57 +333,14 @@ def new_track_thread():
 
 def start():
     render_nowplaying()
-    toggle_control_panel()
+    render_control_panel(PANELS.MEDIA)
     t_new_track = threading.Thread(target=new_track_thread)
     t_new_track.start()
     t_nowplaying = threading.Thread(target=render_nowplaying_thread)
     t_nowplaying.start()
+    session['SCREEN'] = SCREENS.NOWPLAYING
 
 def terminate():
     global session
     session['ACTIVE'] = False
     raise SystemExit
-
-def flash_status(info):
-    global session
-    status = ''
-    if info == 'p':
-        if music_playing:
-            status = 'play'
-        else:
-            status = 'pause'
-    elif info == 'next':
-        status = 'Skipping track...'
-    elif info == 'love':
-        status = 'Track liked'
-    elif info == 'hate':
-        status = 'Track disliked'
-
-    header_surface = pygame.Surface((283, 20), pygame.SRCALPHA)
-    header_surface.fill(HEADER_COLOR)
-    draw_text(status, header_surface, SS_POS, SS_WIDTH/2, 10)
-    sleep(5)
-    station = session['CURRENT_TRACK']['station']
-    draw_text(station, header_surface, SS_POS, SS_WIDTH/2, 10)
-
-
-# def control_pianobar(command):
-#     global audio_level, music_playing
-#
-#     if command.split(' ')[0] == 'audio':
-#         arg = command.split(' ')[1]
-#         if arg == 'up' and audio_level < 100:
-#             audio_level += 2
-#         elif arg == 'down' and audio_level > 50:
-#             audio_level -= 2
-#         elif arg == 'set':
-#             audio_level = int(command.split(' ')[2])
-#         os.system('amixer sset PCM,0 ' + str(audio_level) + '%')
-#     else:
-#         if(command == 'p'):
-#             music_playing = not music_playing
-#             display_control_panel(False)
-#         status = Thread(target=flash_status, args=(command,))
-#         status.start()
-#         cmd = 'su pi -c \"' + CONTROL + command + '\"'
-#         os.system(cmd)
