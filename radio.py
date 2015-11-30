@@ -13,6 +13,7 @@ def init_session(pianobar='/home/bryan/.config/pianobar', tft=True, debug=False)
         pygame.mouse.set_visible(False)
         pitft = PiTFT_Screen()
     else:
+        pygame.display.set_caption('TFT Radio')
         pygame.init()
 
     screen = pygame.display.set_mode((320, 240))
@@ -83,10 +84,29 @@ def read_control(tft=False):
                 elif 262 <= pos[0] <= 310 and 45 <= pos[1] <= 93:
                     render_home()
                     RENDER_EV.set()
-                    debug('boom')
             elif session['SCREEN'] == SCREENS.HOME:
                 if 50 <= pos[0] <= 114 and 40 <= pos[1] <= 104:
                     render_nowplaying()
+                elif 200 <= pos[0] <= 264 and 40 <= pos[1] <= 104:
+                    render_stations()
+            elif session['SCREEN'] == SCREENS.STATIONS:
+                index = session['PAGE']*5
+                if 30 <= pos[0] <= 292 and 38 <= pos[1] <= 66:
+                    index -= 5
+                elif 30 <= pos[0] <= 292 and 73 <= pos[1] <= 101:
+                    index -= 4
+                elif 30 <= pos[0] <= 292 and 108 <= pos[1] <= 136:
+                    index -= 3
+                elif 30 <= pos[0] <= 292 and 143 <= pos[1] <= 171:
+                    index -= 2
+                elif 30 <= pos[0] <= 292 and 178 <= pos[1] <= 106:
+                    index -= 1
+                else:
+                    return
+                print(index)
+                fifo = os.path.join(session['PIANOBAR'], 'ctl')
+                cmd = 'echo s%d > %s &' % (index, fifo)
+                os.system(cmd)
 
             # elif session['SCREEN'] == SCREENS.HOME:
             #     if 193 <= pos[0] <= 257 and 44 <= pos[1] <= 108:

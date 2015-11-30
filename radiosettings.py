@@ -6,7 +6,8 @@ from time import sleep
 
 session = { "IMAGES": None, "CONTROL": None, "PIANOBAR": None, "ACTIVE": True,
             "VOLUME_CONTROL": None, "VOLUME": 100, "MUSIC_PLAYING": False,
-            "CURRENT_TRACK": None, "DEBUG": False, 'PANEL': 0, 'SCREEN': None }
+            "CURRENT_TRACK": None, "DEBUG": False, 'PANEL': 0, 'SCREEN': None,
+            'PAGE': 2 }
 screen = pygame.display.set_mode((320, 240))
 pitft = 0
 

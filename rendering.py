@@ -23,8 +23,8 @@ def flash_status(command):
     station = session['CURRENT_TRACK']['station']
     draw_text(station, header_surface, SS_POS, SS_WIDTH/2, 10)
 
-def draw_text(text, surface, surface_position, x, y):
-    np_font = pygame.font.SysFont("Helvetica", 12)
+def draw_text(text, surface, surface_position, x, y, size=12):
+    np_font = pygame.font.SysFont("Helvetica", size)
     lbl = np_font.render(text, 1, (255, 255, 255))
     text_pos = lbl.get_rect()
     text_pos.centerx = x
@@ -61,6 +61,7 @@ def render_control_panel(panel, hide=False):
     elif panel == PANELS.PAGES:
         btns.append('arrow-thick-left-2x.png')
         btns.append('arrow-thick-right-2x.png')
+        btns.append('home-2x.png')
 
     img_x = 25
     for img_file in btns:
@@ -70,6 +71,30 @@ def render_control_panel(panel, hide=False):
     screen.blit(control_panel_surface, (0, 223))
     pygame.display.flip()
     session['PANEL'] = panel
+
+def render_stations():
+    global screen, session
+    header_surface = pygame.Surface((283, 20), pygame.SRCALPHA)
+    background = pygame.image.load(os.path.join(session['IMAGES'], 'menu.png'))
+    screen.blit(background, (0, 0))
+    render_control_panel(PANELS.PAGES)
+    draw_text('Select Station', header_surface, SS_POS, SS_WIDTH/2, 10)
+
+    conn = sql.connect(session['DB'])
+    stations = conn.execute("SELECT name FROM stations").fetchall()
+    index = session['PAGE']*5
+
+    station_y = 52
+    for n in range(index-5, index):
+        if n < len(stations):
+            debug(stations[n][0])
+            draw_text(stations[n][0], screen, (0, 0), 160, station_y, size=16)
+            station_y += 36
+        else:
+            break
+
+    pygame.display.flip()
+    session['SCREEN'] = SCREENS.STATIONS
 
 
 def render_home():
@@ -113,6 +138,9 @@ def render_nowplaying_thread():
 
         tracks = conn.execute("SELECT * FROM history \
                                 ORDER BY id DESC LIMIT 3").fetchall()
+        session['CURRENT_TRACK'] = { 'song': tracks[0][1],
+        'artist': tracks[0][2], 'album': tracks[0][3], 'station': tracks[0][4],
+        'art': tracks[0][5] }
 
         # Render album images
         album_surfaces = []
@@ -169,11 +197,10 @@ def render_nowplaying():
     screen.blit(volume_btn, (262, 105))
     screen.blit(home_btn, (262, 45))
 
-    if session['CURRENT_TRACK'] is not None:
-        RENDER_EV.set()
+    RENDER_EV.set()
 
     render_control_panel(PANELS.MEDIA)
     pygame.display.flip()
+    session['SCREEN'] = SCREENS.NOWPLAYING
     t_nowplaying = threading.Thread(target=render_nowplaying_thread)
     t_nowplaying.start()
-    session['SCREEN'] = SCREENS.NOWPLAYING
