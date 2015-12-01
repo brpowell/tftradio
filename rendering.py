@@ -87,7 +87,6 @@ def render_stations():
     station_y = 52
     for n in range(index-5, index):
         if n < len(stations):
-            debug(stations[n][0])
             draw_text(stations[n][0], screen, (0, 0), 160, station_y, size=16)
             station_y += 36
         else:

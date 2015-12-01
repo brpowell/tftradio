@@ -118,19 +118,29 @@ def read_control(tft=False):
         if session['PANEL'] == PANELS.VOLUME:
             if pitft.Button1:
                 control_pianobar('audio down')
-            if pitft.Button2:
+            elif pitft.Button2:
                 control_pianobar('audio up')
-            if pitft.Button3:
+            elif pitft.Button3:
                 control_pianobar('audio mute')
         elif session['PANEL'] == PANELS.MEDIA:
             if pitft.Button1:
                 control_pianobar('p')
-            if pitft.Button2:
+            elif pitft.Button2:
                 control_pianobar('next')
-            if pitft.Button3:
+            elif pitft.Button3:
                 control_pianobar('love')
-            if pitft.Button4:
+            elif pitft.Button4:
                 control_pianobar('hate')
+        elif session['PANEL'] == PANELS.PAGES:
+            if pitft.Button3:
+                render_home()
+            else:
+                if pitft.Button1 and session['PAGE'] > 0:
+                    session['PAGE'] -= 1
+                elif pitft.Button2 and session['PAGE'] < session['PAGE']*5-1:
+                    session['PAGE'] += 1
+                render_stations()
+
 
 def new_track_thread():
     global session

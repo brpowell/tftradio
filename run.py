@@ -8,6 +8,7 @@ def main():
     while True:
         radio.read_control(tft=False)
         if pygame.event.poll().type == pygame.QUIT:
+            print('im trying to quit...')
             radio.terminate()
 
 if __name__ == '__main__': main()
